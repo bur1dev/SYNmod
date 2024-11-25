@@ -5,6 +5,8 @@ resolver = "2"
 [workspace.dependencies]
 hdi = "0.4.2"
 hdk = "0.3.2"
+holochain_integrity_types = { version = "0.3", features = ["properties"] }
+serde_yaml = "0.9"
 
 [profile.dev]
 opt-level = "z"

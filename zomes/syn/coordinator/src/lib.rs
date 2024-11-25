@@ -9,6 +9,7 @@ mod messages;
 mod tags;
 mod utils;
 mod workspace;
+mod cart;  // Add this!
 
 #[hdk_extern]
 pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
@@ -189,3 +190,4 @@ fn get_entry_for_action(action_hash: &ActionHash) -> ExternResult<Option<EntryTy
         entry,
     )?)
 }
+
