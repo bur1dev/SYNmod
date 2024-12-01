@@ -1,7 +1,5 @@
-use commit::LinkDocumentToCommitInput;
 use hc_zome_syn_integrity::*;
 use hdk::prelude::*;
-use messages::SessionMessage;
 
 mod commit;
 mod document;
@@ -10,6 +8,15 @@ mod tags;
 mod utils;
 mod workspace;
 mod cart;  // Add this!
+
+// Add all pub use statements
+pub use commit::*;
+pub use document::*;
+pub use messages::*;
+pub use tags::*;
+pub use utils::*;
+pub use workspace::*;
+pub use cart::*; 
 
 #[hdk_extern]
 pub fn init(_: ()) -> ExternResult<InitCallbackResult> {

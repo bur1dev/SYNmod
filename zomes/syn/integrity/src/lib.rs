@@ -22,6 +22,7 @@ pub enum EntryTypes {
     Workspace(Workspace),
     Commit(Commit),
     Cart(Cart),  // New
+    CloneEntry(CloneEntry),
 }
 
 // Add cart-related link types
