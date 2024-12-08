@@ -168,6 +168,46 @@ pub fn get_all_carts() -> ExternResult<Vec<Record>> {
     Ok(carts)
 }
 
+#[hdk_extern]
+pub fn get_cart_contents() -> ExternResult<Vec<Record>> {
+    let path = Path::from("cart_clones");
+    let links = get_links(GetLinksInputBuilder::try_new(
+        path.path_entry_hash()?,
+        LinkTypes::CartToDocument,
+    )?.build())?;
+    
+    let mut carts = Vec::new();
+    for link in links {
+        if let Some(action_hash) = link.target.into_action_hash() {
+            if let Some(record) = get(action_hash, GetOptions::default())? {
+                let entry = record
+                    .entry()
+                    .to_app_option::<CloneEntry>()
+                    .map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?
+                    .ok_or(wasm_error!("Expected CloneEntry"))?;
+                
+                let cart_path = Path::from(format!("agent_carts_{}", entry.clone_info.agent_key))
+                    .typed(LinkTypes::CartPath)?
+                    .path_entry_hash()?;
+                
+                let cart_links = get_links(GetLinksInputBuilder::try_new(
+                    cart_path,
+                    LinkTypes::CartToDocument,
+                )?.build())?;
+
+                for cart_link in cart_links {
+                    if let Some(cart_hash) = cart_link.target.into_action_hash() {
+                        if let Some(cart_record) = get(cart_hash, GetOptions::default())? {
+                            carts.push(cart_record);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(carts)
+}
+
 fn random_network_seed() -> ExternResult<String> {
     let random_bytes = random_bytes(32)?;
     Ok(base64::encode(&random_bytes))
