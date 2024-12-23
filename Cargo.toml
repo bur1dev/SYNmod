@@ -7,6 +7,8 @@ hdi = "0.4.2"
 hdk = "0.3.2"
 holochain_integrity_types = { version = "0.3", features = ["properties"] }
 serde_yaml = "0.9"
+serde = "1"
+products_integrity = { path = "zomes/product_catalog/integrity" }
 
 [profile.dev]
 opt-level = "z"

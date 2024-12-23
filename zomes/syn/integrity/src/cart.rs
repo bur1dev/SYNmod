@@ -9,10 +9,11 @@ pub struct Cart {
     pub owner: AgentPubKey,           
     pub status: CartStatus,           
     pub created_at: Timestamp,
+    pub cart_name: String,
     pub meta: Option<SerializedBytes>, 
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum CartStatus {
     Active,
     CheckedOut,
@@ -27,6 +28,8 @@ pub struct CartCloneInfo {
     pub original_dna_hash: DnaHash,
     pub document_hash: AnyDhtHash,
     pub created_at: Timestamp,
+    pub role_name: String,
+    pub holochain_clone_id: String,
 }
 
 #[hdk_entry_helper]

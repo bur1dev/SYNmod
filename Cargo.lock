@@ -1583,6 +1583,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "products"
+version = "0.0.1"
+dependencies = [
+ "hdk",
+ "products_integrity",
+ "serde",
+]
+
+[[package]]
+name = "products_integrity"
+version = "0.0.1"
+dependencies = [
+ "hdi",
+ "serde",
+]
+
+[[package]]
 name = "profiles_coordinator"
 version = "0.1.0-alpha.0"
 dependencies = [
