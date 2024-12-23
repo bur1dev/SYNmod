@@ -284,100 +284,102 @@ pub fn get_cell_for_cart(cart_id: String) -> ExternResult<CellId> {
 
 #[hdk_extern]
 pub fn delete_cart(input: DeleteCartInput) -> ExternResult<()> {
-    let path = Path::from("cart_clones");
-    let clone_links = get_links(GetLinksInputBuilder::try_new(
-        path.path_entry_hash()?,
-        LinkTypes::CartToDocument,
-    )?.build())?;
+  let path = Path::from("cart_clones");
+  let clone_links = get_links(GetLinksInputBuilder::try_new(
+      path.path_entry_hash()?,
+      LinkTypes::CartToDocument,
+  )?.build())?;
 
-    // Extract just the DNA hash portion from cart_id
-    let parts: Vec<&str> = input.cart_id.split('_').collect();
-    let cart_dna_hash = parts[1]; // Get the DNA hash portion
-    warn!("Cart ID from input: {}", input.cart_id);
-    warn!("Extracted DNA hash: {}", cart_dna_hash);
+  let parts: Vec<&str> = input.cart_id.split('_').collect();
+  let cart_dna_hash = parts[1..parts.len()-1].join("_");
+  let cart_timestamp = parts[parts.len()-1];
+  warn!("Cart ID from input: {}", input.cart_id);
+  warn!("Extracted DNA hash: {}", cart_dna_hash);
+  warn!("Cart timestamp: {}", cart_timestamp);
 
-    let mut target_clone_entry = None;
-    let mut target_clone_link = None;
+  let mut target_clone_entry = None;
+  let mut target_clone_link = None;
 
-    for link in clone_links.iter() {
-        if let Some(action_hash) = link.target.clone().into_action_hash() {
-            if let Some(record) = get(action_hash, GetOptions::default())? {
-                let clone_entry = record
-                    .entry()
-                    .to_app_option::<CloneEntry>()
-                    .map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?
-                    .ok_or(wasm_error!("Expected CloneEntry"))?;
+  for link in clone_links.iter() {
+      if let Some(action_hash) = link.target.clone().into_action_hash() {
+          if let Some(record) = get(action_hash, GetOptions::default())? {
+              let clone_entry = record
+                  .entry()
+                  .to_app_option::<CloneEntry>()
+                  .map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?
+                  .ok_or(wasm_error!("Expected CloneEntry"))?;
 
-                warn!("Comparing - Input hash: {}, Stored hash: {}", cart_dna_hash, clone_entry.clone_info.cart_dna_hash.to_string());
-                
-                // Match only on DNA hash
-                if clone_entry.clone_info.cart_dna_hash.to_string() == cart_dna_hash {
-                    target_clone_entry = Some(clone_entry);
-                    target_clone_link = Some(link.clone());
-                    break;
-                }
-            }
-        }
-    }
+              let clone_timestamp = clone_entry.clone_info.created_at.as_micros().to_string();
+              warn!("Comparing - Input hash: {}, Stored hash: {}", cart_dna_hash, clone_entry.clone_info.cart_dna_hash.to_string());
+              warn!("Comparing - Input timestamp: {}, Stored timestamp: {}", cart_timestamp, clone_timestamp);
 
-    if let Some(clone_entry) = target_clone_entry {
-        let agent_path = Path::from(format!("agent_carts_{}", agent_info()?.agent_initial_pubkey))
-            .typed(LinkTypes::CartPath)?;
-        
-        let cart_links = get_links(GetLinksInputBuilder::try_new(
-            agent_path.path_entry_hash()?,
-            LinkTypes::CartToDocument,
-        )?.build())?;
+              if clone_entry.clone_info.cart_dna_hash.to_string() == cart_dna_hash && clone_timestamp == cart_timestamp {
+                  target_clone_entry = Some(clone_entry);
+                  target_clone_link = Some(link.clone());
+                  break;
+              }
+          }
+      }
+  }
 
-        for cart_link in cart_links {
-            if let Some(cart_hash) = cart_link.target.clone().into_action_hash() {
-                if let Some(cart_record) = get(cart_hash, GetOptions::default())? {
-                    if let Some(mut cart) = cart_record.entry().to_app_option::<Cart>()
-                        .map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))? {
-                        // Match only on DNA hash
-                        if cart.cart_dna_hash.to_string() == cart_dna_hash {
-                            cart.status = CartStatus::Processed;
-                            let new_action_hash = create_entry(EntryTypes::Cart(cart))?;
-                            
-                            create_link(
-                                agent_path.path_entry_hash()?,
-                                new_action_hash,
-                                LinkTypes::CartToDocument,
-                                (),
-                            )?;
-                            delete_link(cart_link.create_link_hash)?;
+  if let Some(clone_entry) = target_clone_entry {
+      let agent_path = Path::from(format!("agent_carts_{}", agent_info()?.agent_initial_pubkey))
+          .typed(LinkTypes::CartPath)?;
+      
+      let cart_links = get_links(GetLinksInputBuilder::try_new(
+          agent_path.path_entry_hash()?,
+          LinkTypes::CartToDocument,
+      )?.build())?;
 
-                            let clone_id = CloneId::try_from(clone_entry.clone_info.holochain_clone_id.clone())
-                                .map_err(|_| wasm_error!("Invalid clone ID format"))?;
+      for cart_link in cart_links {
+          if let Some(cart_hash) = cart_link.target.clone().into_action_hash() {
+              if let Some(cart_record) = get(cart_hash, GetOptions::default())? {
+                  if let Some(mut cart) = cart_record.entry().to_app_option::<Cart>()
+                      .map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))? {
+                      let cart_created_timestamp = cart.created_at.as_micros().to_string();
+                      if cart.cart_dna_hash.to_string() == cart_dna_hash && cart_created_timestamp == cart_timestamp {
+                          cart.status = CartStatus::Processed;
+                          let new_action_hash = create_entry(EntryTypes::Cart(cart))?;
+                          
+                          create_link(
+                              agent_path.path_entry_hash()?,
+                              new_action_hash,
+                              LinkTypes::CartToDocument,
+                              (),
+                          )?;
+                          delete_link(cart_link.create_link_hash)?;
 
-                            HDK.with(|hdk| {
-                                let result = hdk.borrow().disable_clone_cell(DisableCloneCellInput {
-                                    clone_cell_id: CloneCellId::CloneId(clone_id.clone())
-                                });
+                          let clone_id = CloneId::try_from(clone_entry.clone_info.holochain_clone_id.clone())
+                              .map_err(|_| wasm_error!("Invalid clone ID format"))?;
 
-                                match result {
-                                    Ok(_) => {
-                                        hdk.borrow().delete_clone_cell(DeleteCloneCellInput {
-                                            clone_cell_id: CloneCellId::CloneId(clone_id)
-                                        })?;
-                                        if let Some(target_link) = target_clone_link {
-                                            delete_link(target_link.create_link_hash)?;
-                                        }
-                                        Ok(())
-                                    },
-                                    Err(e) => Err(e)
-                                }
-                            })?;
+                          HDK.with(|hdk| {
+                              let result = hdk.borrow().disable_clone_cell(DisableCloneCellInput {
+                                  clone_cell_id: CloneCellId::CloneId(clone_id.clone())
+                              });
 
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    Err(wasm_error!("Cart not found"))
+                              match result {
+                                  Ok(_) => {
+                                      hdk.borrow().delete_clone_cell(DeleteCloneCellInput {
+                                          clone_cell_id: CloneCellId::CloneId(clone_id)
+                                      })?;
+                                      if let Some(target_link) = target_clone_link {
+                                          delete_link(target_link.create_link_hash)?;
+                                      }
+                                      Ok(())
+                                  },
+                                  Err(e) => Err(e)
+                              }
+                          })?;
+
+                          return Ok(());
+                      }
+                  }
+              }
+          }
+      }
+  }
+  
+  Err(wasm_error!("Cart not found"))
 }
 
 fn random_network_seed() -> ExternResult<String> {
