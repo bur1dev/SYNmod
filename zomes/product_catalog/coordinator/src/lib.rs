@@ -1,6 +1,8 @@
-pub mod all_products;
 pub mod product;
 pub mod products_by_category;
+pub mod favorite;
+pub mod category_setup;
+
 use hdk::prelude::*;
 use products_integrity::*;
 

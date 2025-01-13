@@ -14,10 +14,10 @@ pub enum EntryTypes {
 #[derive(Serialize, Deserialize)]
 #[hdk_link_types]
 pub enum LinkTypes {
-    AllProducts,
-    ProductsByCategory,
+    ProductsByCategory,  // Keep this for basic category linking
+    Favorite,           // Keep this for favorites functionality
+    CategoryToSubcategory  // Keep this for category structure
 }
-
 // Validation you perform during the genesis process. Nobody else on the network performs it, only you.
 // There *is no* access to network calls in this callback
 #[hdk_extern]
@@ -59,14 +59,14 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             OpEntry::CreateEntry { app_entry, action } => match app_entry {
                 EntryTypes::Product(product) => {
                     validate_create_product(EntryCreationAction::Create(action), product)
-                }
+                },
             },
             OpEntry::UpdateEntry {
                 app_entry, action, ..
             } => match app_entry {
                 EntryTypes::Product(product) => {
                     validate_create_product(EntryCreationAction::Update(action), product)
-                }
+                },
             },
             _ => Ok(ValidateCallbackResult::Valid),
         },
@@ -85,8 +85,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                 };
                 match app_entry {
                     EntryTypes::Product(product) => {
-                        let original_app_entry =
-                            must_get_valid_record(action.clone().original_action_address)?;
+                        let original_app_entry = must_get_valid_record(action.clone().original_action_address)?;
                         let original_product = match Product::try_from(original_app_entry) {
                             Ok(entry) => entry,
                             Err(e) => {
@@ -95,13 +94,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                                 )));
                             }
                         };
-                        validate_update_product(
-                            action,
-                            product,
-                            original_create_action,
-                            original_product,
-                        )
-                    }
+                        validate_update_product(action, product, original_create_action, original_product)
+                    },
                 }
             }
             _ => Ok(ValidateCallbackResult::Valid),
@@ -160,12 +154,11 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             tag,
             action,
         } => match link_type {
-            LinkTypes::AllProducts => {
-                validate_create_link_all_products(action, base_address, target_address, tag)
-            }
             LinkTypes::ProductsByCategory => {
                 validate_create_link_products_by_category(action, base_address, target_address, tag)
             }
+            LinkTypes::Favorite => Ok(ValidateCallbackResult::Valid),
+            LinkTypes::CategoryToSubcategory => Ok(ValidateCallbackResult::Valid)
         },
         FlatOp::RegisterDeleteLink {
             link_type,
@@ -175,13 +168,6 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             original_action,
             action,
         } => match link_type {
-            LinkTypes::AllProducts => validate_delete_link_all_products(
-                action,
-                original_action,
-                base_address,
-                target_address,
-                tag,
-            ),
             LinkTypes::ProductsByCategory => validate_delete_link_products_by_category(
                 action,
                 original_action,
@@ -189,20 +175,16 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                 target_address,
                 tag,
             ),
+            LinkTypes::Favorite => Ok(ValidateCallbackResult::Valid),
+            LinkTypes::CategoryToSubcategory => Ok(ValidateCallbackResult::Valid),
         },
         FlatOp::StoreRecord(store_record) => {
             match store_record {
-                // Complementary validation to the `StoreEntry` Op, in which the record itself is validated
-                // If you want to optimize performance, you can remove the validation for an entry type here and keep it in `StoreEntry`
-                // Notice that doing so will cause `must_get_valid_record` for this record to return a valid record even if the `StoreEntry` validation failed
                 OpRecord::CreateEntry { app_entry, action } => match app_entry {
                     EntryTypes::Product(product) => {
                         validate_create_product(EntryCreationAction::Create(action), product)
-                    }
+                    },
                 },
-                // Complementary validation to the `RegisterUpdate` Op, in which the record itself is validated
-                // If you want to optimize performance, you can remove the validation for an entry type here and keep it in `StoreEntry` and in `RegisterUpdate`
-                // Notice that doing so will cause `must_get_valid_record` for this record to return a valid record even if the other validations failed
                 OpRecord::UpdateEntry {
                     original_action_hash,
                     app_entry,
@@ -243,21 +225,13 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                                         );
                                     }
                                 };
-                                validate_update_product(
-                                    action,
-                                    product,
-                                    original_action,
-                                    original_product,
-                                )
+                                validate_update_product(action, product, original_action, original_product)
                             } else {
                                 Ok(result)
                             }
-                        }
+                        },
                     }
                 }
-                // Complementary validation to the `RegisterDelete` Op, in which the record itself is validated
-                // If you want to optimize performance, you can remove the validation for an entry type here and keep it in `RegisterDelete`
-                // Notice that doing so will cause `must_get_valid_record` for this record to return a valid record even if the `RegisterDelete` validation failed
                 OpRecord::DeleteEntry {
                     original_action_hash,
                     action,
@@ -307,12 +281,9 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                     match original_app_entry {
                         EntryTypes::Product(original_product) => {
                             validate_delete_product(action, original_action, original_product)
-                        }
+                        },
                     }
                 }
-                // Complementary validation to the `RegisterCreateLink` Op, in which the record itself is validated
-                // If you want to optimize performance, you can remove the validation for an entry type here and keep it in `RegisterCreateLink`
-                // Notice that doing so will cause `must_get_valid_record` for this record to return a valid record even if the `RegisterCreateLink` validation failed
                 OpRecord::CreateLink {
                     base_address,
                     target_address,
@@ -320,19 +291,15 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                     link_type,
                     action,
                 } => match link_type {
-                    LinkTypes::AllProducts => {
-                        validate_create_link_all_products(action, base_address, target_address, tag)
-                    }
                     LinkTypes::ProductsByCategory => validate_create_link_products_by_category(
                         action,
                         base_address,
                         target_address,
                         tag,
                     ),
+                    LinkTypes::Favorite => Ok(ValidateCallbackResult::Valid),
+                    LinkTypes::CategoryToSubcategory => Ok(ValidateCallbackResult::Valid),
                 },
-                // Complementary validation to the `RegisterDeleteLink` Op, in which the record itself is validated
-                // If you want to optimize performance, you can remove the validation for an entry type here and keep it in `RegisterDeleteLink`
-                // Notice that doing so will cause `must_get_valid_record` for this record to return a valid record even if the `RegisterDeleteLink` validation failed
                 OpRecord::DeleteLink {
                     original_action_hash,
                     base_address,
@@ -358,13 +325,6 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                         }
                     };
                     match link_type {
-                        LinkTypes::AllProducts => validate_delete_link_all_products(
-                            action,
-                            create_link.clone(),
-                            base_address,
-                            create_link.target_address,
-                            create_link.tag,
-                        ),
                         LinkTypes::ProductsByCategory => validate_delete_link_products_by_category(
                             action,
                             create_link.clone(),
@@ -372,6 +332,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                             create_link.target_address,
                             create_link.tag,
                         ),
+                        LinkTypes::Favorite => Ok(ValidateCallbackResult::Valid),
+                        LinkTypes::CategoryToSubcategory => Ok(ValidateCallbackResult::Valid),
                     }
                 }
                 OpRecord::CreatePrivateEntry { .. } => Ok(ValidateCallbackResult::Valid),

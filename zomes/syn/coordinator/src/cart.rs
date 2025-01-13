@@ -28,6 +28,7 @@ pub struct CloneInfo {
 pub struct CreateCartEntryInput {
     pub input: CloneCartInput,
     pub created_at: Timestamp,
+    pub cart_dna_hash: DnaHash 
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -131,29 +132,10 @@ pub fn get_cart_clones(_: ()) -> ExternResult<Vec<CartCloneInfo>> {
 pub fn create_cart_entry(entry_input: CreateCartEntryInput) -> ExternResult<Record> {
     let dna = dna_info()?;
     let agent = agent_info()?;
-    
-    let path = Path::from("cart_clones");
-    let links = get_links(GetLinksInputBuilder::try_new(
-        path.path_entry_hash()?,
-        LinkTypes::CartToDocument,
-    )?.build())?;
-    
-    let mut clone_dna = None;
-    for link in links {
-        if let Some(action_hash) = link.target.into_action_hash() {
-            if let Some(record) = get(action_hash, GetOptions::default())? {
-                if let Some(clone_entry) = record.entry().to_app_option::<CloneEntry>()
-                    .map_err(|e| wasm_error!(WasmErrorInner::Guest(format!("Serialization error: {}", e))))? {
-                    clone_dna = Some(clone_entry.clone_info.cart_dna_hash);
-                    break;
-                }
-            }
-        }
-    }
 
     let cart = Cart {
         original_dna_hash: dna.hash.clone(),
-        cart_dna_hash: clone_dna.unwrap_or(dna.hash),
+        cart_dna_hash: entry_input.cart_dna_hash,
         document_hash: entry_input.input.document_hash.clone(),
         owner: agent.agent_initial_pubkey.clone(),
         status: CartStatus::Active,
@@ -163,7 +145,6 @@ pub fn create_cart_entry(entry_input: CreateCartEntryInput) -> ExternResult<Reco
     };
 
     let action_hash = create_entry(EntryTypes::Cart(cart.clone()))?;
-    
     let agent_path = Path::from(format!("agent_carts_{}", agent.agent_initial_pubkey))
         .typed(LinkTypes::CartPath)?;
     
@@ -284,6 +265,8 @@ pub fn get_cell_for_cart(cart_id: String) -> ExternResult<CellId> {
 
 #[hdk_extern]
 pub fn delete_cart(input: DeleteCartInput) -> ExternResult<()> {
+  warn!("[delete_cart] Starting deletion: {}", input.cart_id);
+  
   let path = Path::from("cart_clones");
   let clone_links = get_links(GetLinksInputBuilder::try_new(
       path.path_entry_hash()?,
@@ -293,9 +276,9 @@ pub fn delete_cart(input: DeleteCartInput) -> ExternResult<()> {
   let parts: Vec<&str> = input.cart_id.split('_').collect();
   let cart_dna_hash = parts[1..parts.len()-1].join("_");
   let cart_timestamp = parts[parts.len()-1];
-  warn!("Cart ID from input: {}", input.cart_id);
-  warn!("Extracted DNA hash: {}", cart_dna_hash);
-  warn!("Cart timestamp: {}", cart_timestamp);
+  
+  warn!("[delete_cart] Parsed input - DNA hash: {}, timestamp: {}", 
+        cart_dna_hash, cart_timestamp);
 
   let mut target_clone_entry = None;
   let mut target_clone_link = None;
@@ -304,16 +287,19 @@ pub fn delete_cart(input: DeleteCartInput) -> ExternResult<()> {
       if let Some(action_hash) = link.target.clone().into_action_hash() {
           if let Some(record) = get(action_hash, GetOptions::default())? {
               let clone_entry = record
-                  .entry()
-                  .to_app_option::<CloneEntry>()
-                  .map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?
-                  .ok_or(wasm_error!("Expected CloneEntry"))?;
+    .entry()
+    .to_app_option::<CloneEntry>()
+    .map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?
+    .ok_or(wasm_error!("Expected CloneEntry"))?;
 
               let clone_timestamp = clone_entry.clone_info.created_at.as_micros().to_string();
-              warn!("Comparing - Input hash: {}, Stored hash: {}", cart_dna_hash, clone_entry.clone_info.cart_dna_hash.to_string());
-              warn!("Comparing - Input timestamp: {}, Stored timestamp: {}", cart_timestamp, clone_timestamp);
+              
+              warn!("[delete_cart] Checking clone entry - DNA: {}, timestamp: {}", 
+                    clone_entry.clone_info.cart_dna_hash, clone_timestamp);
 
-              if clone_entry.clone_info.cart_dna_hash.to_string() == cart_dna_hash && clone_timestamp == cart_timestamp {
+              if clone_entry.clone_info.cart_dna_hash.to_string() == cart_dna_hash && 
+                 clone_timestamp == cart_timestamp {
+                  warn!("[delete_cart] Found matching clone entry");
                   target_clone_entry = Some(clone_entry);
                   target_clone_link = Some(link.clone());
                   break;
@@ -323,6 +309,7 @@ pub fn delete_cart(input: DeleteCartInput) -> ExternResult<()> {
   }
 
   if let Some(clone_entry) = target_clone_entry {
+      warn!("[delete_cart] Processing clone entry deletion");
       let agent_path = Path::from(format!("agent_carts_{}", agent_info()?.agent_initial_pubkey))
           .typed(LinkTypes::CartPath)?;
       
@@ -385,4 +372,74 @@ pub fn delete_cart(input: DeleteCartInput) -> ExternResult<()> {
 fn random_network_seed() -> ExternResult<String> {
     let random_bytes = random_bytes(32)?;
     Ok(base64::encode(&random_bytes))
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdateCartInput {
+    pub cart_id: String,
+    pub status: CartStatus,
+}
+
+#[hdk_extern]
+pub fn update_cart_status(input: UpdateCartInput) -> ExternResult<()> {
+    let path = Path::from("cart_clones");
+    let clone_links = get_links(GetLinksInputBuilder::try_new(
+        path.path_entry_hash()?,
+        LinkTypes::CartToDocument,
+    )?.build())?;
+
+    let parts: Vec<&str> = input.cart_id.split('_').collect();
+    let cart_dna_hash = parts[1..parts.len()-1].join("_");
+    let cart_timestamp = parts[parts.len()-1];
+    
+    for link in clone_links {
+        if let Some(action_hash) = link.target.into_action_hash() {
+            if let Some(record) = get(action_hash, GetOptions::default())? {
+                let clone_entry = record
+                    .entry()
+                    .to_app_option::<CloneEntry>()
+                    .map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?
+                    .ok_or(wasm_error!("Expected CloneEntry"))?;
+
+                let clone_timestamp = clone_entry.clone_info.created_at.as_micros().to_string();
+                
+                if clone_entry.clone_info.cart_dna_hash.to_string() == cart_dna_hash && 
+                   clone_timestamp == cart_timestamp {
+                    
+                    let agent_path = Path::from(format!("agent_carts_{}", agent_info()?.agent_initial_pubkey))
+                        .typed(LinkTypes::CartPath)?;
+                    
+                    let cart_links = get_links(GetLinksInputBuilder::try_new(
+                        agent_path.path_entry_hash()?,
+                        LinkTypes::CartToDocument,
+                    )?.build())?;
+
+                    for cart_link in cart_links {
+                        if let Some(cart_hash) = cart_link.target.clone().into_action_hash() {
+                            if let Some(cart_record) = get(cart_hash, GetOptions::default())? {
+                                if let Some(mut cart) = cart_record.entry()
+    .to_app_option::<Cart>()
+    .map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))? {
+                                    let cart_created_timestamp = cart.created_at.as_micros().to_string();
+                                    if cart.cart_dna_hash.to_string() == cart_dna_hash && cart_created_timestamp == cart_timestamp {
+    cart.status = input.status;
+    let hash = create_entry(EntryTypes::Cart(cart))?;
+    delete_link(cart_link.create_link_hash)?;
+    create_link(
+        agent_path.path_entry_hash()?,
+        hash,
+        LinkTypes::CartToDocument,
+        (),
+    )?;
+    return Ok(());
+}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Err(wasm_error!("Cart not found"))
 }
