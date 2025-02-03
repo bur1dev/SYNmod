@@ -9,6 +9,7 @@ pub struct Product {
     pub stocks_status: String,
     pub category: String,
     pub subcategory: Option<String>, // Add this
+    pub product_type: Option<String>,
     pub image_url: Option<String>
 }
 
@@ -16,7 +17,8 @@ pub struct Product {
 pub struct CreateProductInput {
     pub product: Product,
     pub main_category: String,
-    pub subcategory: Option<String>
+    pub subcategory: Option<String>,
+    pub product_type: Option<String>
 }
 
 pub fn validate_create_product(

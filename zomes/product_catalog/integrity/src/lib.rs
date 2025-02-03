@@ -16,7 +16,8 @@ pub enum EntryTypes {
 pub enum LinkTypes {
     ProductsByCategory,  // Keep this for basic category linking
     Favorite,           // Keep this for favorites functionality
-    CategoryToSubcategory  // Keep this for category structure
+    CategoryToSubcategory,  // Keep this for category structure
+    ProductTypeToProducts
 }
 // Validation you perform during the genesis process. Nobody else on the network performs it, only you.
 // There *is no* access to network calls in this callback
@@ -158,7 +159,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                 validate_create_link_products_by_category(action, base_address, target_address, tag)
             }
             LinkTypes::Favorite => Ok(ValidateCallbackResult::Valid),
-            LinkTypes::CategoryToSubcategory => Ok(ValidateCallbackResult::Valid)
+            LinkTypes::CategoryToSubcategory => Ok(ValidateCallbackResult::Valid),
+            LinkTypes::ProductTypeToProducts => Ok(ValidateCallbackResult::Valid),
         },
         FlatOp::RegisterDeleteLink {
             link_type,
@@ -177,6 +179,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             ),
             LinkTypes::Favorite => Ok(ValidateCallbackResult::Valid),
             LinkTypes::CategoryToSubcategory => Ok(ValidateCallbackResult::Valid),
+            LinkTypes::ProductTypeToProducts => Ok(ValidateCallbackResult::Valid),
         },
         FlatOp::StoreRecord(store_record) => {
             match store_record {
@@ -299,6 +302,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                     ),
                     LinkTypes::Favorite => Ok(ValidateCallbackResult::Valid),
                     LinkTypes::CategoryToSubcategory => Ok(ValidateCallbackResult::Valid),
+                    LinkTypes::ProductTypeToProducts => Ok(ValidateCallbackResult::Valid),
                 },
                 OpRecord::DeleteLink {
                     original_action_hash,
@@ -334,6 +338,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                         ),
                         LinkTypes::Favorite => Ok(ValidateCallbackResult::Valid),
                         LinkTypes::CategoryToSubcategory => Ok(ValidateCallbackResult::Valid),
+                        LinkTypes::ProductTypeToProducts => Ok(ValidateCallbackResult::Valid),
                     }
                 }
                 OpRecord::CreatePrivateEntry { .. } => Ok(ValidateCallbackResult::Valid),
